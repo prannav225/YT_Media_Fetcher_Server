@@ -118,7 +118,10 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
         }
     else:
         # Strict format selection
-        format_str = f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
+        if quality == "best":
+            format_str = 'bestvideo+bestaudio/best'
+        else:
+            format_str = f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
         
         return {
             **common_opts,
