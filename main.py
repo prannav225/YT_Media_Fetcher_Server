@@ -78,13 +78,11 @@ async def get_video_info(request: Request):
         raise HTTPException(status_code=400, detail="URL is required")
     
     try:
-        ydl_opts = {
-            'quiet': True,
-            'nocheckcertificate': True,
-            # Let defaults handle clients
-        }
+        # Use the same robust options for info fetching
+        ydl_opts = get_ydl_opts()
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            print(f"DEBUG: Fetching info for {url} (default clients)")
+            print(f"DEBUG: Fetching info for {url} (forced clients)")
             info = ydl.extract_info(url, download=False)
             return {
                 "title": info.get("title"),
