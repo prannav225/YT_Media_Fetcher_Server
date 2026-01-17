@@ -76,19 +76,27 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
         'default_search': 'auto',
         'force_ipv4': True,
         'cachedir': False,
+        'user_agent': os.environ.get("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     }
 
     # Inject Cookies
     if os.path.exists(COOKIE_PATH):
         common_opts['cookiefile'] = COOKIE_PATH
-
-    # Use mobile clients as primary bypass strategy
-    common_opts['extractor_args'] = {
-        'youtube': {
-            'player_client': ['android', 'ios'],
-            'skip': ['hls', 'dash']
+        # If we have cookies, we should use the web client often associated with browser cookies
+        common_opts['extractor_args'] = {
+            'youtube': {
+                'player_client': ['web', 'web_creator'],
+                'skip': ['hls', 'dash']
+            }
         }
-    }
+    else:
+        # Fallback to mobile clients if no cookies
+        common_opts['extractor_args'] = {
+            'youtube': {
+                'player_client': ['android', 'ios'],
+                'skip': ['hls', 'dash']
+            }
+        }
 
     if format_type == "audio":
         common_opts.update({
