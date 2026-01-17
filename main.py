@@ -77,22 +77,31 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
     if os.path.exists("/tmp/cookies.txt"):
         common_opts['cookiefile'] = "/tmp/cookies.txt"
         print("DEBUG: Encrypted Cookies Loaded - Using Authentication")
-    
-    # 2. Advanced Bypass Clients (Always apply these as they augment auth)
-    common_opts.update({
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios', 'android', 'web_creator', 'mweb', 'tv'],
-                'skip': ['hls', 'dash']
+        
+        # When using cookies, we should be less aggressive with client forcing 
+        # as it can conflict with the browser data.
+        common_opts.update({
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.5',
             }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.google.com/',
-        }
-    })
+        })
+    else:
+        # 2. Fallback to iOS/TV Spoofing (If no cookies)
+        print("DEBUG: No Cookies Found - Using iOS Client Spoofing")
+        common_opts.update({
+             'extractor_args': {
+                'youtube': {
+                    'player_client': ['ios', 'android', 'tv'],
+                    'skip': ['hls', 'dash']
+                }
+            },
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
+        })
 
     print(f"DEBUG: download_video opts (Using forced iOS/Android clients)")
 
@@ -139,8 +148,10 @@ async def get_video_info(request: Request):
                 "uploader": info.get("uploader"),
             }
     except Exception as e:
-        print(f"ERROR in get_video_info: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        print(f"ERROR in get_video_info: {error_msg}")
+        # Send the actual error back so we can see it in the browser!
+        raise HTTPException(status_code=500, detail=error_msg)
 
 @app.post("/api/download")
 async def download_video(request: Request):
