@@ -5,45 +5,54 @@ import yt_dlp
 import os
 import json
 import base64
+import urllib.parse
 
-# Write cookies from Env Var to file at startup (for Render/backend compatibility)
-print(f"DEBUG: Startup check - Env Vars present: {list(os.environ.keys())[:5]}... (total {len(os.environ)})")
+# --- STARTUP COOKIE LOADING ---
+COOKIE_PATH = "/tmp/cookies.txt"
 
-if os.environ.get("YOUTUBE_COOKIES_B64"):
+def setup_cookies():
+    raw_b64 = os.environ.get("YOUTUBE_COOKIES_B64")
+    if not raw_b64:
+        print("DEBUG: YOUTUBE_COOKIES_B64 environment variable not found.")
+        return
     try:
-        # Strip potential whitespace/newlines from the env var
-        clean_b64 = os.environ["YOUTUBE_COOKIES_B64"].strip().replace("\n", "").replace("\r", "")
-        with open("/tmp/cookies.txt", "wb") as f:
-            f.write(base64.b64decode(clean_b64))
-        print("DEBUG: ✅ YOUTUBE_COOKIES_B64 found and written to /tmp/cookies.txt")
+        # Deep clean: remove any hidden spaces, tabs or newlines
+        clean_data = "".join(raw_b64.split())
+        decoded = base64.b64decode(clean_data)
+        with open(COOKIE_PATH, "wb") as f:
+            f.write(decoded)
+        print(f"DEBUG: ✅ Cookies saved to {COOKIE_PATH} ({len(decoded)} bytes)")
     except Exception as e:
-        print(f"ERROR: ❌ Failed to decode YOUTUBE_COOKIES_B64: {e}")
-else:
-    print("DEBUG: ⚠️ No YOUTUBE_COOKIES_B64 detected in environment.")
+        print(f"ERROR: ❌ Cookie setup failed: {e}")
+
+# Load immediately on module load
+setup_cookies()
 
 app = FastAPI()
 
 @app.get("/")
 async def health_check():
-    cookie_error = None
     cookie_preview = "None"
-    if os.path.exists("/tmp/cookies.txt"):
+    file_exists = os.path.exists(COOKIE_PATH)
+    file_size = 0
+    if file_exists:
         try:
-            with open("/tmp/cookies.txt", "r") as f:
-                cookie_preview = f.read(30) # Peek at the first 30 chars
+            file_size = os.path.getsize(COOKIE_PATH)
+            with open(COOKIE_PATH, "r") as f:
+                cookie_preview = f.read(50)
         except Exception as e:
-            cookie_error = str(e)
-
+            cookie_preview = f"Error: {str(e)}"
+            
     return {
         "status": "online",
-        "message": "YouTube Media Fetcher API is running",
-        "cookies_loaded": os.path.exists("/tmp/cookies.txt"),
-        "cookie_preview": cookie_preview, # Should start with "# Netscape"
-        "detected_env_keys": [key for key in os.environ.keys() if "YOUTUBE" in key],
-        "cookie_error": cookie_error
+        "cookies_loaded": file_exists,
+        "cookie_file_size": file_size,
+        "cookie_file_preview": cookie_preview,
+        "is_netscape_format": "# Netscape" in cookie_preview,
+        "env_var_found": os.environ.get("YOUTUBE_COOKIES_B64") is not None
     }
 
-# Configure CORS
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -54,68 +63,56 @@ app.add_middleware(
 )
 
 def get_ydl_opts(format_type: str = "video", quality: str = "best"):
-    # Ensure ffmpeg available in PATH for yt-dlp
-    os.environ["PATH"] += os.pathsep + "/opt/homebrew/bin"
-    
-    
+    # Add local path for ffmpeg (macOS dev support)
+    if os.path.exists("/opt/homebrew/bin"):
+        os.environ["PATH"] += os.pathsep + "/opt/homebrew/bin"
+        
     common_opts = {
         'quiet': True,
-        'nocheckcertificate': True,
-        'ignoreerrors': False, # Change to False so we see the real error 
-        'logtostderr': False,
         'no_warnings': True,
+        'nocheckcertificate': True,
+        'ignoreerrors': False,
+        'logtostderr': False,
         'default_search': 'auto',
-        'source_address': '0.0.0.0',
         'force_ipv4': True,
         'cachedir': False,
     }
 
-    # Dynamic Path Config (Local vs Docker)
-    if os.path.exists('/opt/homebrew/bin/ffmpeg'):
-        common_opts['ffmpeg_location'] = '/opt/homebrew/bin/ffmpeg'
+    # Inject Cookies
+    if os.path.exists(COOKIE_PATH):
+        common_opts['cookiefile'] = COOKIE_PATH
 
-    # Smart Auth Strategy
-    # 1. Try Cookies First (Best for bypassing 'Sign in to confirm...')
-    if os.path.exists("/tmp/cookies.txt"):
-        common_opts['cookiefile'] = "/tmp/cookies.txt"
-        print("DEBUG: Encrypted Cookies Loaded - Using Authentication")
-    
-    # Use Mobile Clients (Android/iOS) - these are CURRENTLY the most robust bypass
-    common_opts.update({
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'ios'],
-                'skip': ['hls', 'dash']
-            }
+    # Use mobile clients as primary bypass strategy
+    common_opts['extractor_args'] = {
+        'youtube': {
+            'player_client': ['android', 'ios'],
+            'skip': ['hls', 'dash']
         }
-    })
-
-    print(f"DEBUG: download_video opts (Using forced iOS/Android clients)")
+    }
 
     if format_type == "audio":
-        return {
-            **common_opts,
+        common_opts.update({
             'format': 'bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': quality, 
+                'preferredquality': quality,
             }],
             'outtmpl': '%(title)s.%(ext)s',
-        }
+        })
     else:
-        # Strict format selection
         if quality == "best":
-            format_str = 'bestvideo+bestaudio/best'
+            f_str = 'bestvideo+bestaudio/best'
         else:
-            format_str = f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
+            f_str = f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
         
-        return {
-            **common_opts,
-            'format': format_str, 
+        common_opts.update({
+            'format': f_str,
             'outtmpl': '%(title)s.%(ext)s',
             'merge_output_format': 'mp4',
-        }
+        })
+
+    return common_opts
 
 @app.post("/api/info")
 async def get_video_info(request: Request):
@@ -125,16 +122,13 @@ async def get_video_info(request: Request):
         raise HTTPException(status_code=400, detail="URL is required")
     
     try:
-        # Use the same robust options for info fetching
         ydl_opts = get_ydl_opts()
-        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            print(f"DEBUG: Fetching info for {url} (forced clients)")
+            print(f"DEBUG: Extracting info for {url}")
             info = ydl.extract_info(url, download=False)
+            if not info:
+                raise Exception("YouTube returned no info. This usually means the IP is blocked or cookies have expired.")
             
-            if info is None:
-                raise Exception("yt-dlp returned None. This usually means the video is restricted or the server is blocked.")
-
             return {
                 "title": info.get("title"),
                 "thumbnail": info.get("thumbnail"),
@@ -142,89 +136,60 @@ async def get_video_info(request: Request):
                 "uploader": info.get("uploader"),
             }
     except Exception as e:
-        error_msg = str(e)
-        print(f"ERROR in get_video_info: {error_msg}")
-        # Send the actual error back so we can see it in the browser!
-        raise HTTPException(status_code=500, detail=error_msg)
+        err_msg = str(e)
+        print(f"ERROR: {err_msg}")
+        raise HTTPException(status_code=500, detail=err_msg)
 
 @app.post("/api/download")
 async def download_video(request: Request):
     data = await request.json()
     url = data.get("url")
-    format_type = data.get("format", "video") # video or audio
+    format_type = data.get("format", "video")
     quality = data.get("quality", "1080" if format_type == "video" else "192")
     
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
 
-    # Note: robust streaming download is complex with yt-dlp directly to response.
-    # For now, we will download to a temp file and stream it back, then delete.
-    # Ideally, we should use a proper job queue or stream directly if possible.
-    
     try:
         ydl_opts = get_ydl_opts(format_type, quality)
-        # Use a temporary directory or specific output path
-        # For simplicity in this demo, downloading to current dir then streaming
-        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            print(f"DEBUG: Starting download for {url} with quality {quality}")
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # Post-download verification:
-            # When merging video+audio (e.g. into mp4), the extension might change.
-            # We need to find the actual file that exists.
-            
+            # Merge extension check
             if not os.path.exists(filename):
-                # Check for merged file (video+audio usually results in .mp4 if we requested merge_output_format='mp4')
-                base_name = os.path.splitext(filename)[0]
-                potential_file = base_name + ".mp4"
-                if os.path.exists(potential_file):
-                    filename = potential_file
-                else:
-                     # Check with mkv if mp4 not found (default merge format sometimes)
-                    potential_file = base_name + ".mkv"
-                    if os.path.exists(potential_file):
-                        filename = potential_file
-
-            if format_type == "audio":
-                 # For audio, we post-processed to mp3, so check that
-                 filename = os.path.splitext(filename)[0] + ".mp3"
+                base = os.path.splitext(filename)[0]
+                for ext in [".mp4", ".mkv", ".mp3"]:
+                    if os.path.exists(base + ext):
+                        filename = base + ext
+                        break
 
         if not os.path.exists(filename):
-             raise Exception(f"Downloaded file not found at expected path: {filename}")
-
-        print(f"DEBUG: Serving file {filename}, size: {os.path.getsize(filename)} bytes")
+            raise Exception("File not found after download completion.")
 
         def iterfile():
             try:
-                with open(filename, mode="rb") as file_like:
-                    yield from file_like
+                with open(filename, mode="rb") as f:
+                    yield from f
             finally:
                 if os.path.exists(filename):
                     os.remove(filename)
 
         media_type = "audio/mpeg" if format_type == "audio" else "video/mp4"
-        
-        # Handle non-ascii filenames by url-encoding just in case, or creating a safe name
-        safe_filename = os.path.basename(filename)
+        safe_name = os.path.basename(filename)
         try:
-             safe_filename.encode('latin-1')
-        except UnicodeEncodeError:
-            # Fallback for filenames with special characters
-            import urllib.parse
-            safe_filename = urllib.parse.quote(safe_filename)
+            safe_name.encode('latin-1')
+        except:
+            safe_name = urllib.parse.quote(safe_name)
 
-        file_size = os.path.getsize(filename)
         return StreamingResponse(
-            iterfile(), 
-            media_type=media_type, 
+            iterfile(),
+            media_type=media_type,
             headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
-                "Content-Length": str(file_size)
+                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}",
+                "Content-Length": str(os.path.getsize(filename))
             }
         )
-
     except Exception as e:
+        print(f"ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
