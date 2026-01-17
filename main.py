@@ -7,15 +7,29 @@ import json
 import base64
 
 # Write cookies from Env Var to file at startup (for Render/backend compatibility)
+print(f"DEBUG: Startup check - Env Vars present: {list(os.environ.keys())[:5]}... (total {len(os.environ)})")
+
 if os.environ.get("YOUTUBE_COOKIES_B64"):
     try:
+        # Strip potential whitespace/newlines from the env var
+        clean_b64 = os.environ["YOUTUBE_COOKIES_B64"].strip().replace("\n", "").replace("\r", "")
         with open("/tmp/cookies.txt", "wb") as f:
-            f.write(base64.b64decode(os.environ["YOUTUBE_COOKIES_B64"]))
-        print("DEBUG: YOUTUBE_COOKIES_B64 found and written to /tmp/cookies.txt")
+            f.write(base64.b64decode(clean_b64))
+        print("DEBUG: ✅ YOUTUBE_COOKIES_B64 found and written to /tmp/cookies.txt")
     except Exception as e:
-        print(f"ERROR: Failed to decode YOUTUBE_COOKIES_B64: {e}")
+        print(f"ERROR: ❌ Failed to decode YOUTUBE_COOKIES_B64: {e}")
+else:
+    print("DEBUG: ⚠️ No YOUTUBE_COOKIES_B64 detected in environment.")
 
 app = FastAPI()
+
+@app.get("/")
+async def health_check():
+    return {
+        "status": "online",
+        "message": "YouTube Media Fetcher API is running",
+        "cookies_loaded": os.path.exists("/tmp/cookies.txt")
+    }
 
 # Configure CORS
 app.add_middleware(
