@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
-# Install system dependencies (ffmpeg)
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Install system dependencies (ffmpeg and git)
+RUN apt-get update && apt-get install -y ffmpeg git && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
