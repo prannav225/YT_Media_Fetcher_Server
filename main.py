@@ -4,6 +4,16 @@ from fastapi.responses import StreamingResponse
 import yt_dlp
 import os
 import json
+import base64
+
+# Write cookies from Env Var to file at startup (for Render/backend compatibility)
+if os.environ.get("YOUTUBE_COOKIES_B64"):
+    try:
+        with open("/tmp/cookies.txt", "wb") as f:
+            f.write(base64.b64decode(os.environ["YOUTUBE_COOKIES_B64"]))
+        print("DEBUG: YOUTUBE_COOKIES_B64 found and written to /tmp/cookies.txt")
+    except Exception as e:
+        print(f"ERROR: Failed to decode YOUTUBE_COOKIES_B64: {e}")
 
 app = FastAPI()
 
@@ -21,6 +31,7 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
     # Ensure ffmpeg available in PATH for yt-dlp
     os.environ["PATH"] += os.pathsep + "/opt/homebrew/bin"
     
+    
     common_opts = {
         'quiet': True,
         'nocheckcertificate': True,
@@ -31,20 +42,32 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
         'source_address': '0.0.0.0',
         'force_ipv4': True,
         'cachedir': False,
-        # 'ffmpeg_location': '/opt/homebrew/bin/ffmpeg', # Removed for Docker/Render compatibility
-        
-        # Anti-Bot / 403 Bypass Options
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios', 'android', 'web'], # Try mobile clients first
-                'skip': ['hls', 'dash'] # Skip manifest downloads if possible causing issues
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
     }
+
+    # Dynamic Path Config (Local vs Docker)
+    if os.path.exists('/opt/homebrew/bin/ffmpeg'):
+        common_opts['ffmpeg_location'] = '/opt/homebrew/bin/ffmpeg'
+
+    # Smart Auth Strategy
+    # 1. Try Cookies First (Best for bypassing 'Sign in to confirm...')
+    if os.path.exists("/tmp/cookies.txt"):
+        common_opts['cookiefile'] = "/tmp/cookies.txt"
+        print("DEBUG: Encrypted Cookies Loaded - Using Authentication")
+    else:
+        # 2. Fallback to iOS Client Spoofing (If no cookies)
+        print("DEBUG: No Cookies Found - Using iOS Client Spoofing")
+        common_opts.update({
+             'extractor_args': {
+                'youtube': {
+                    'player_client': ['ios', 'android', 'web'],
+                    'skip': ['hls', 'dash']
+                }
+            },
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
+        })
 
     print(f"DEBUG: download_video opts (Using forced iOS/Android clients)")
 
