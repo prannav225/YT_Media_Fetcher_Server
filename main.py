@@ -59,7 +59,7 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
     common_opts = {
         'quiet': True,
         'nocheckcertificate': True,
-        'ignoreerrors': True,
+        'ignoreerrors': False, # Change to False so we see the real error 
         'logtostderr': False,
         'no_warnings': True,
         'default_search': 'auto',
@@ -144,6 +144,10 @@ async def get_video_info(request: Request):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             print(f"DEBUG: Fetching info for {url} (forced clients)")
             info = ydl.extract_info(url, download=False)
+            
+            if info is None:
+                raise Exception("yt-dlp returned None. This usually means the video is restricted or the server is blocked.")
+
             return {
                 "title": info.get("title"),
                 "thumbnail": info.get("thumbnail"),
