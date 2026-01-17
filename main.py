@@ -32,10 +32,21 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
         'force_ipv4': True,
         'cachedir': False,
         # 'ffmpeg_location': '/opt/homebrew/bin/ffmpeg', # Removed for Docker/Render compatibility
-        # Removing manual player_client to let yt-dlp use defaults (e.g. android_sdkless) which works better
+        
+        # Anti-Bot / 403 Bypass Options
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios', 'android', 'web'], # Try mobile clients first
+                'skip': ['hls', 'dash'] # Skip manifest downloads if possible causing issues
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
     }
 
-    print(f"DEBUG: download_video opts (default clients)")
+    print(f"DEBUG: download_video opts (Using forced iOS/Android clients)")
 
     if format_type == "audio":
         return {
@@ -50,7 +61,7 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
         }
     else:
         # Strict format selection
-        format_str = f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]'
+        format_str = f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
         
         return {
             **common_opts,
