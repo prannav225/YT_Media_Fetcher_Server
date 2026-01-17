@@ -53,21 +53,22 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
     if os.path.exists("/tmp/cookies.txt"):
         common_opts['cookiefile'] = "/tmp/cookies.txt"
         print("DEBUG: Encrypted Cookies Loaded - Using Authentication")
-    else:
-        # 2. Fallback to iOS Client Spoofing (If no cookies)
-        print("DEBUG: No Cookies Found - Using iOS Client Spoofing")
-        common_opts.update({
-             'extractor_args': {
-                'youtube': {
-                    'player_client': ['ios', 'android', 'web'],
-                    'skip': ['hls', 'dash']
-                }
-            },
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-                'Accept-Language': 'en-US,en;q=0.9',
+    
+    # 2. Advanced Bypass Clients (Always apply these as they augment auth)
+    common_opts.update({
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios', 'android', 'web_creator', 'mweb', 'tv'],
+                'skip': ['hls', 'dash']
             }
-        })
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://www.google.com/',
+        }
+    })
 
     print(f"DEBUG: download_video opts (Using forced iOS/Android clients)")
 
