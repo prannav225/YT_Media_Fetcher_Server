@@ -31,7 +31,7 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
         'source_address': '0.0.0.0',
         'force_ipv4': True,
         'cachedir': False,
-        'ffmpeg_location': '/opt/homebrew/bin/ffmpeg', 
+        # 'ffmpeg_location': '/opt/homebrew/bin/ffmpeg', # Removed for Docker/Render compatibility
         # Removing manual player_client to let yt-dlp use defaults (e.g. android_sdkless) which works better
     }
 
