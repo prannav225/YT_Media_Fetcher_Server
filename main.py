@@ -25,10 +25,20 @@ app = FastAPI()
 
 @app.get("/")
 async def health_check():
+    cookie_error = None
+    if os.environ.get("YOUTUBE_COOKIES_B64"):
+        try:
+            clean_b64 = os.environ["YOUTUBE_COOKIES_B64"].strip().replace("\n", "").replace("\r", "")
+            base64.b64decode(clean_b64)
+        except Exception as e:
+            cookie_error = str(e)
+
     return {
         "status": "online",
         "message": "YouTube Media Fetcher API is running",
-        "cookies_loaded": os.path.exists("/tmp/cookies.txt")
+        "cookies_loaded": os.path.exists("/tmp/cookies.txt"),
+        "detected_env_keys": [key for key in os.environ.keys() if "YOUTUBE" in key],
+        "cookie_error": cookie_error
     }
 
 # Configure CORS
