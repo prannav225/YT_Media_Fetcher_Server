@@ -26,10 +26,11 @@ app = FastAPI()
 @app.get("/")
 async def health_check():
     cookie_error = None
-    if os.environ.get("YOUTUBE_COOKIES_B64"):
+    cookie_preview = "None"
+    if os.path.exists("/tmp/cookies.txt"):
         try:
-            clean_b64 = os.environ["YOUTUBE_COOKIES_B64"].strip().replace("\n", "").replace("\r", "")
-            base64.b64decode(clean_b64)
+            with open("/tmp/cookies.txt", "r") as f:
+                cookie_preview = f.read(30) # Peek at the first 30 chars
         except Exception as e:
             cookie_error = str(e)
 
@@ -37,6 +38,7 @@ async def health_check():
         "status": "online",
         "message": "YouTube Media Fetcher API is running",
         "cookies_loaded": os.path.exists("/tmp/cookies.txt"),
+        "cookie_preview": cookie_preview, # Should start with "# Netscape"
         "detected_env_keys": [key for key in os.environ.keys() if "YOUTUBE" in key],
         "cookie_error": cookie_error
     }
@@ -77,31 +79,16 @@ def get_ydl_opts(format_type: str = "video", quality: str = "best"):
     if os.path.exists("/tmp/cookies.txt"):
         common_opts['cookiefile'] = "/tmp/cookies.txt"
         print("DEBUG: Encrypted Cookies Loaded - Using Authentication")
-        
-        # When using cookies, we should be less aggressive with client forcing 
-        # as it can conflict with the browser data.
-        common_opts.update({
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.5',
+    
+    # Use Mobile Clients (Android/iOS) - these are CURRENTLY the most robust bypass
+    common_opts.update({
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios'],
+                'skip': ['hls', 'dash']
             }
-        })
-    else:
-        # 2. Fallback to iOS/TV Spoofing (If no cookies)
-        print("DEBUG: No Cookies Found - Using iOS Client Spoofing")
-        common_opts.update({
-             'extractor_args': {
-                'youtube': {
-                    'player_client': ['ios', 'android', 'tv'],
-                    'skip': ['hls', 'dash']
-                }
-            },
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-                'Accept-Language': 'en-US,en;q=0.9',
-            }
-        })
+        }
+    })
 
     print(f"DEBUG: download_video opts (Using forced iOS/Android clients)")
 
